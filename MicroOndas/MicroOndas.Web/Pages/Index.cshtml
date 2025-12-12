@@ -27,7 +27,9 @@
 
             if (Model.CurrentHeatingStatus != null && Model.CurrentHeatingStatus.Status != HeatingStatus.Stopped)
             {
-                timerDisplay = $"Time Remaining: {Model.CurrentHeatingStatus.TimeRemaining}s | Power: {Model.CurrentHeatingStatus.Power}";
+                // CRÍTICO: Remove a renderização estática de Time/Power.
+                // O JavaScript é o único responsável por preencher isso.
+                timerDisplay = "Updating...";
             }
         }
 
@@ -106,19 +108,17 @@
         // ================================
         connection.on("ReceiveStatus", function (data) {
 
-            // Proteção contra "undefined"
             if (!data) return;
 
-            console.log("Status recebido:", data);
+            // CRÍTICO: Usa data.time e data.power (em camelCase)
+            const time = data.time ?? 0;
+            const power = data.power ?? 0;
 
             // Atualiza texto status principal
             document.getElementById("status-text").innerText =
                 data.Status ?? "Waiting";
 
             // Atualiza string de display
-            const time = data.TimeRemaining ?? data.Time ?? 0;
-            const power = data.PowerLevel ?? data.Power ?? 0;
-
             var displayString = `Time Remaining: ${time}s | Power: ${power}`;
             document.getElementById("timer-label").innerText = displayString;
 
@@ -145,9 +145,9 @@
         // START DA CONEXÃO
         // ================================
         connection.start().then(() => {
-            console.log("Connected to Hub");
+            console.log("Connected to Hub, requesting initial status...");
 
-            // Solicitar estado inicial ao carregar a página
+            // Solicita estado inicial ao carregar a página
             connection.invoke("SendCurrentStatus")
                 .catch(err => console.error("Erro ao solicitar estado inicial:", err));
 
