@@ -1,4 +1,5 @@
 ﻿using MicroOndas.Application.DTOs;
+using MicroOndas.Application.Validation; // Importa a camada de validação
 using MicroOndas.Domain.Entities;
 using MicroOndas.Domain.Enums;
 
@@ -12,13 +13,14 @@ namespace MicroOndas.Application.Services
     public class MicroOndasService
     {
         private readonly object _lock = new object();
+        private const int MaxTime = 120; // Limite máximo para o tempo restante (Requisito H)
 
         // Instância única do programa atual
         private HeatingProgram _currentProgram;
 
         public MicroOndasService()
         {
-            // Estado inicial para evitar null (conforme sua lógica)
+            // Estado inicial
             _currentProgram = new HeatingProgram(0, 10);
         }
 
@@ -38,50 +40,63 @@ namespace MicroOndas.Application.Services
         /// Inicia, retoma ou incrementa o tempo de um aquecimento.
         /// Implementa requisitos A, B, C, D, K e M.
         /// </summary>
-        public (bool Success, string Message) StartHeating(ProgramInputDto input, bool isQuickStart = false)
+        /// <returns>
+        /// (Success, Message, TimeConversionMessage)
+        /// </returns>
+        public (bool Success, string Message, string TimeConversionMessage) StartHeating(ProgramInputDto input, bool isQuickStart = false)
         {
             lock (_lock)
             {
-                // ------------------------------
-                // VALID AÇÕES DE ENTRADA
-                // ------------------------------
-                if (input.TimeInSeconds < 1 || input.TimeInSeconds > 120)
-                    return (false, "Time must be between 1 and 120 seconds.");
-
-                if (input.Power < 1 || input.Power > 10)
-                    return (false, "Power must be between 1 and 10.");
-
-                // ------------------------------
-                // REQUISITO K — Incrementar tempo
-                // ------------------------------
-                if (_currentProgram.Status == HeatingStatus.InProgress && !isQuickStart)
-                {
-                    int novoTotal = _currentProgram.TimeRemaining + input.TimeInSeconds.Value;
-
-                    if (novoTotal > 120)
-                        return (false, "Cannot add time. Total time remaining exceeds 120 seconds.");
-
-                    _currentProgram.TimeRemaining = novoTotal;
-
-                    return (true, $"Added {input.TimeInSeconds} seconds to current heating.");
-                }
-
-                // ------------------------------
-                // REQUISITO M — Retomar se pausado
-                // ------------------------------
-                if (_currentProgram.Status == HeatingStatus.Paused)
+                // 1. Lógica de Continue (Requisito M)
+                if (_currentProgram.Status == HeatingStatus.Paused && input.TimeInSeconds == null && input.Power == null)
                 {
                     _currentProgram.Status = HeatingStatus.InProgress;
-                    return (true, "Heating resumed.");
+                    return (true, "Heating resumed.", null);
                 }
 
-                // ------------------------------
-                // NOVO AQUECIMENTO
-                // ------------------------------
-                _currentProgram = new HeatingProgram(input.TimeInSeconds.Value, input.Power.Value);
+                // 2. Lógica de Acréscimo de Tempo (+30s) - (Requisito K)
+                if (_currentProgram.Status == HeatingStatus.InProgress && input.TimeInSeconds == null && input.Power == null)
+                {
+                    const int increment = 30;
+
+                    // CORREÇÃO CRÍTICA: Aplica o limite de 120s no acréscimo
+                    if (_currentProgram.TimeRemaining >= MaxTime)
+                    {
+                        return (false, $"Cannot add time. Current time is already at maximum ({MaxTime}s).", null);
+                    }
+                    else if (_currentProgram.TimeRemaining + increment > MaxTime)
+                    {
+                        // Se o incremento exceder, define o tempo para o máximo (120s)
+                        _currentProgram.TimeRemaining = MaxTime;
+
+                        // Garante que o display M:SS seja atualizado
+                        _currentProgram.UpdateDisplayTime();
+
+                        return (true, $"Time cannot exceed {MaxTime} seconds. Time set to maximum.", null);
+                    }
+                    else
+                    {
+                        _currentProgram.IncrementTime(increment);
+                        return (true, "30 seconds added.", null);
+                    }
+                }
+
+                // 3. Validação (Implementa Requisitos A, B, C, D, F, H, I, J, G)
+                // Assumindo que ProgramValidator retorna (IsValid, Message, TimeConversionMessage, FinalTime, FinalPower)
+                var validationResult = ProgramValidator.ValidateAndProcess(input, isQuickStart);
+
+                if (!validationResult.IsValid)
+                {
+                    // RETORNA MENSAGEM DE ERRO (Requisitos C, H, I)
+                    return (false, validationResult.Message, null);
+                }
+
+                // 4. Criação e Início do Programa
+                _currentProgram = new HeatingProgram(validationResult.FinalTime, validationResult.FinalPower);
                 _currentProgram.Status = HeatingStatus.InProgress;
 
-                return (true, "Heating initiated.");
+                // RETORNA MENSAGEM DE SUCESSO e a mensagem de conversão
+                return (true, "Heating initiated.", validationResult.TimeConversionMessage);
             }
         }
 
@@ -95,9 +110,8 @@ namespace MicroOndas.Application.Services
             {
                 if (_currentProgram.Status == HeatingStatus.InProgress)
                 {
+                    // O DecrementTime na Entidade cuida da contagem, dos pontos e da string DisplayTimeFormatted.
                     _currentProgram.DecrementTime();
-
-                    // Aqui você pode implementar triggers adicionais se quiser
                 }
 
                 return _currentProgram;
@@ -127,6 +141,9 @@ namespace MicroOndas.Application.Services
                 _currentProgram.Status = HeatingStatus.Stopped;
                 _currentProgram.TimeRemaining = 0;
                 _currentProgram.ProcessingString = string.Empty;
+
+                // Garante que o display seja resetado
+                _currentProgram.UpdateDisplayTime();
             }
         }
     }

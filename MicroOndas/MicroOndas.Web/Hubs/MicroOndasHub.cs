@@ -1,13 +1,13 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using MicroOndas.Application.Services;
-using MicroOndas.Application.DTOs;
 using MicroOndas.Domain.Enums;
+using System.Threading.Tasks;
 
 namespace MicroOndas.Web.Hubs
 {
     /// <summary>
     /// Hub responsável por enviar ao front-end o estado atual do micro-ondas.
-    /// O BackgroundService chama SendCurrentStatus() a cada segundo.
+    /// O BackgroundService (MicroOndasTimerService) chama SendCurrentStatus() a cada segundo.
     /// </summary>
     public class MicroOndasHub : Hub
     {
@@ -20,7 +20,7 @@ namespace MicroOndas.Web.Hubs
 
         /// <summary>
         /// Envia o estado atual do micro-ondas ao cliente.
-        /// Chamado pelo BackgroundService e também quando a página abre (via JS).
+        /// Chamado pelo TimerService e também quando a página abre (via JS) para status inicial.
         /// </summary>
         public async Task SendCurrentStatus()
         {
@@ -30,7 +30,8 @@ namespace MicroOndas.Web.Hubs
             var dto = new HeatingStatusDto
             {
                 Status = program.Status.ToString(),
-                Time = program.TimeRemaining,
+                // CRÍTICO: Usa a nova propriedade de string formatada (M:SS ou XXs)
+                DisplayTimeFormatted = program.DisplayTimeFormatted,
                 Power = program.Power,
                 ProcessingString = program.ProcessingString
             };
@@ -38,22 +39,21 @@ namespace MicroOndas.Web.Hubs
             await Clients.All.SendAsync("ReceiveStatus", dto);
         }
 
-        /// <summary>
-        /// Método chamado pelo BackgroundService após cada segundo processado.
-        /// </summary>
-        public async Task SendStatusUpdate()
-        {
-            await SendCurrentStatus();
-        }
+        // Nota: O método SendStatusUpdate foi removido se ele apenas duplicava SendCurrentStatus. 
+        // O TimerService agora chama diretamente SendCurrentStatus.
     }
 
     /// <summary>
     /// DTO enviado ao SignalR — padronizado e completo.
+    /// OBS: O campo 'Time' (int) foi substituído por 'DisplayTimeFormatted' (string) para suportar a conversão M:SS.
     /// </summary>
     public class HeatingStatusDto
     {
         public string Status { get; set; } = string.Empty;
-        public int Time { get; set; }
+
+        // NOVO/ATUALIZADO: Campo para a visualização formatada (M:SS ou XXs).
+        public string DisplayTimeFormatted { get; set; } = string.Empty;
+
         public int Power { get; set; }
         public string ProcessingString { get; set; } = string.Empty;
     }

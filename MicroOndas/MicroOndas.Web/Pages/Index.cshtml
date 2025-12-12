@@ -1,6 +1,8 @@
 ﻿@page
 @using MicroOndas.Domain.Enums
 @model IndexModel
+@using System.Text.Encodings.Web
+
 @{
     ViewData["Title"] = "Digital Micro-Oven";
 }
@@ -10,26 +12,41 @@
     <p>Set time (1-120s) and power (1-10, default 10).</p>
     <hr />
 
+    @* Exibição de Mensagens (Erro, Sucesso, Conversão) *@
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger">@Model.ErrorMessage</div>
+        <div class="alert alert-danger">@HtmlEncoder.Default.Encode(Model.ErrorMessage)</div>
     }
     @if (!string.IsNullOrEmpty(Model.Message))
     {
-        <div class="alert alert-warning">@Model.Message</div>
+        <div class="alert alert-warning">@HtmlEncoder.Default.Encode(Model.Message)</div>
+    }
+    @if (!string.IsNullOrEmpty(Model.TimeConversionMessage))
+    {
+        <div class="alert alert-info">
+            @HtmlEncoder.Default.Encode(Model.TimeConversionMessage)
+        </div>
     }
 
+    @* Display Principal (Atualizado pelo SignalR) *@
     <div id="status-display" class="border p-4 mb-4 bg-dark text-light">
         @{
-            string statusText = Model.CurrentHeatingStatus?.Status.ToString() ?? "Stopped";
+            string statusText = Model.CurrentHeatingStatus?.Status.ToString() ??
+            "Stopped";
             string timerDisplay = "Ready to program";
             string processString = Model.CurrentHeatingStatus?.ProcessingString ?? "";
-
             if (Model.CurrentHeatingStatus != null && Model.CurrentHeatingStatus.Status != HeatingStatus.Stopped)
             {
-                // CRÍTICO: Remove a renderização estática de Time/Power.
-                // O JavaScript é o único responsável por preencher isso.
-                timerDisplay = "Updating...";
+                // ATENÇÃO: Se você adicionou 'DisplayTimeFormatted' à Entidade, use-a aqui.
+                // Caso contrário, use a lógica de formatação:
+                // Exemplo se você não usou DisplayTimeFormatted:
+                // string timeFormat = Model.CurrentHeatingStatus.TimeRemaining >= 60 ?
+                //     $"{Model.CurrentHeatingStatus.TimeRemaining / 60}:{Model.CurrentHeatingStatus.TimeRemaining % 60:D2}" :
+                //     $"{Model.CurrentHeatingStatus.TimeRemaining}s";
+                // timerDisplay = $"Time Remaining: {timeFormat} | Power: {Model.CurrentHeatingStatus.Power}";
+
+                // USANDO DisplayTimeFormatted (necessário no HeatingProgram.cs):
+                timerDisplay = $"Time Remaining: {Model.CurrentHeatingStatus.DisplayTimeFormatted} | Power: {Model.CurrentHeatingStatus.Power}";
             }
         }
 
@@ -39,111 +56,130 @@
         <p id="timer-label">
             @timerDisplay
         </p>
-        <div id="process-string">@processString</div>
+        <p id="process-string">
+            @processString
+        </p>
     </div>
 
-    <form method="post">
-
-        <div class="form-group row mb-3">
-            <label asp-for="InputTime" class="col-sm-4 col-form-label">Time (seconds)</label>
-            <div class="col-sm-8">
-                <input asp-for="InputTime" class="form-control" type="number" min="1" max="120" />
+    @* --- Formulário de Input e Botões --- *@
+    <form method="post" id="microondas-form">
+        <div class="row mb-3 justify-content-center">
+            <div class="col-md-3">
+                <input asp-for="InputTime" id="InputTime" type="number" min="1" max="120" class="form-control" placeholder="Time (s)" required />
+            </div>
+            <div class="col-md-3">
+                <input asp-for="InputPower" id="InputPower" type="number" min="1" max="10" class="form-control" placeholder="Power (1-10)" />
             </div>
         </div>
 
-        <div class="form-group row mb-4">
-            <label asp-for="InputPower" class="col-sm-4 col-form-label">Power (1-10)</label>
-            <div class="col-sm-8">
-                <input asp-for="InputPower" class="form-control" type="number" min="1" max="10" />
+        <div class="row justify-content-center">
+            @* Primeira Coluna de Botões (Start, Continue, +30s) *@
+            <div class="col-md-3 mb-2">
+                <button type="submit" asp-page-handler="StartHeating" id="btn-start" class="btn btn-primary w-100" style="display:none;">Start Heating</button>
+                <button type="submit" asp-page-handler="Continue" id="btn-continue" class="btn btn-success w-100" style="display:none;">Continue</button>
+                <button type="submit" asp-page-handler="AddThirtySeconds" id="btn-add-30s" class="btn btn-info w-100" style="display:none;">+30 Seconds</button>
             </div>
-        </div>
 
-        <div class="d-grid gap-2 d-md-block">
-            <button type="submit" asp-page-handler="Start" class="btn btn-success btn-lg">
-                @{
-                    string startButtonText = "Start";
-                    if (Model.CurrentHeatingStatus?.Status == HeatingStatus.InProgress)
-                    {
-                        startButtonText = "+30s"; // Requisito K
-                    }
-                    else if (Model.CurrentHeatingStatus?.Status == HeatingStatus.Paused)
-                    {
-                        startButtonText = "Continue"; // Requisito M
-                    }
-                }
-                @startButtonText
-            </button>
+            @* Segunda Coluna de Botões (Quick Start, Pause, Cancel) *@
+            <div class="col-md-3 mb-2">
+                <button type="submit" asp-page-handler="QuickStart" id="btn-quick-start" class="btn btn-primary w-100" style="display:none;">Quick Start</button>
 
-            <button type="submit" asp-page-handler="QuickStart" class="btn btn-info btn-lg">Quick Start</button>
+                @* CORREÇÃO CRÍTICA: Botões separados para Pause e Cancel *@
+                <button type="submit" asp-page-handler="Pause" id="btn-pause" class="btn btn-danger w-100" style="display:none;">Pause</button>
+                <button type="submit" asp-page-handler="Cancel" id="btn-cancel" class="btn btn-danger w-100" style="display:none;">Cancel</button>
 
-            <button type="submit" asp-page-handler="PauseOrCancel" class="btn btn-danger btn-lg">
-                @{
-                    string pauseCancelButtonText = "Clear";
-                    if (Model.CurrentHeatingStatus?.Status == HeatingStatus.InProgress)
-                    {
-                        pauseCancelButtonText = "Pause"; // Requisito M
-                    }
-                    else if (Model.CurrentHeatingStatus?.Status == HeatingStatus.Paused)
-                    {
-                        pauseCancelButtonText = "Cancel"; // Requisito N
-                    }
-                }
-                @pauseCancelButtonText
-            </button>
+                <button type="submit" asp-page-handler="Clear" id="btn-clear" class="btn btn-secondary w-100" style="display:none;">Clear</button>
+            </div>
         </div>
     </form>
 </div>
 
 @section Scripts {
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
-
     <script>
-        // Cria conexão com o Hub
-        var connection = new signalR.HubConnectionBuilder()
-            .withUrl("/microondashub")
-            .build();
+        // Mapeamento dos status C# para facilitar o uso no JS
+        const STATUS_COMPLETED = "@HeatingStatus.Completed.ToString()";
+        const STATUS_PAUSED = "@HeatingStatus.Paused.ToString()";
+        const STATUS_STOPPED = "@HeatingStatus.Stopped.ToString()";
+        const STATUS_IN_PROGRESS = "@HeatingStatus.InProgress.ToString()";
 
-        // ================================
-        // LISTENER DO SIGNALR (RECEBE STATUS)
-        // ================================
-        connection.on("ReceiveStatus", function (data) {
+        // Elementos do DOM
+        const statusText = document.getElementById("status-text");
+        const timerLabel = document.getElementById("timer-label");
+        const processString = document.getElementById("process-string");
+        const inputTime = document.getElementById("InputTime");
+        const inputPower = document.getElementById("InputPower");
 
-            if (!data) return;
+        // Botões (ATUALIZADOS)
+        const btnStart = document.getElementById("btn-start");
+        const btnContinue = document.getElementById("btn-continue");
+        const btnAdd30s = document.getElementById("btn-add-30s");
+        const btnQuickStart = document.getElementById("btn-quick-start");
+        const btnPause = document.getElementById("btn-pause"); // NOVO
+        const btnCancel = document.getElementById("btn-cancel"); // NOVO
+        const btnClear = document.getElementById("btn-clear");
 
-            // CRÍTICO: Usa data.time e data.power (em camelCase)
-            const time = data.time ?? 0;
-            const power = data.power ?? 0;
+        function updateUI(statusData) {
+            if (!statusData) return;
+            const currentStatus = statusData.status;
 
-            // Atualiza texto status principal
-            document.getElementById("status-text").innerText =
-                data.Status ?? "Waiting";
+            // 1. Atualiza Display
+            statusText.innerText = currentStatus;
 
-            // Atualiza string de display
-            var displayString = `Time Remaining: ${time}s | Power: ${power}`;
-            document.getElementById("timer-label").innerText = displayString;
+            // Usa a nova propriedade displayTimeFormatted (em camelCase)
+            timerLabel.innerText = `Time Remaining: ${statusData.displayTimeFormatted} | Power: ${statusData.power}`;
 
-            // Atualiza string de processamento (ex: "...", ".....")
-            document.getElementById("process-string").innerText =
-                data.ProcessingString ?? "";
+            processString.innerText = statusData.processingString ?? "";
 
-            // Lógica para recarregar a página após Finalizar / Parar / Pausar
-            const finished = "@HeatingStatus.Completed.ToString()";
-            const paused = "@HeatingStatus.Paused.ToString()";
-            const stopped = "@HeatingStatus.Stopped.ToString()";
+            // 2. Controla Botões e Inputs (Lógica Crucial)
+            let isHeating = currentStatus === STATUS_IN_PROGRESS;
+            let isPaused = currentStatus === STATUS_PAUSED;
+            let isReady = currentStatus === STATUS_STOPPED || currentStatus === STATUS_COMPLETED;
 
-            if (data.Status === finished ||
-                data.Status === paused ||
-                data.Status === stopped) {
+            // Esconde todos os botões de controle primeiro (ATUALIZADO)
+            btnStart.style.display = 'none';
+            btnContinue.style.display = 'none';
+            btnAdd30s.style.display = 'none';
+            btnQuickStart.style.display = 'none';
+            btnPause.style.display = 'none'; // NOVO
+            btnCancel.style.display = 'none'; // NOVO
+            btnClear.style.display = 'none'; // NOVO
 
-                setTimeout(() => {
-                    window.location.reload();
-                }, 500);
+            // Habilita/Desabilita Inputs
+            // Inputs devem ser desabilitados se estiver aquecendo ou pausado
+            inputTime.disabled = isHeating || isPaused;
+            inputPower.disabled = isHeating || isPaused;
+
+            if (isHeating) {
+                // Em andamento: Mostra +30s e Pause
+                btnAdd30s.style.display = 'block';
+                btnPause.style.display = 'block'; // Mostra Pause
+            } else if (isPaused) {
+                // Pausado: Mostra Continue e Cancel
+                btnContinue.style.display = 'block';
+                btnCancel.style.display = 'block'; // Mostra Cancel
+            } else if (isReady) {
+                // Parado/Concluído: Mostra Start e QuickStart
+                btnStart.style.display = 'block';
+                btnQuickStart.style.display = 'block';
+
+                // Se estiver Completo, mostra Clear/Limpar
+                if (currentStatus === STATUS_COMPLETED) {
+                    btnClear.style.display = 'block';
+                }
             }
+        }
+
+
+        // ================================
+        // Lógica SignalR
+        // ================================
+        var connection = new signalR.HubConnectionBuilder().withUrl("/microondashub").build();
+        connection.on("ReceiveStatus", function (data) {
+            // Chama a função principal para atualizar UI
+            updateUI(data);
         });
 
-        // ================================
-        // START DA CONEXÃO
-        // ================================
         connection.start().then(() => {
             console.log("Connected to Hub, requesting initial status...");
 
@@ -155,5 +191,20 @@
             console.error("Erro ao conectar ao hub:", err);
         });
 
+        // Chamada inicial para garantir que o estado dos botões seja definido no carregamento do Razor
+        const initialStatusText = statusText.innerText.trim();
+        const initialTimerLabel = timerLabel.innerText.trim();
+
+        // Tentativa de extrair valores iniciais para sincronizar o JS com o Razor
+        const initialTimeFormattedMatch = initialTimerLabel.match(/Time Remaining: (.*) \| Power/);
+        const initialPowerMatch = initialTimerLabel.match(/Power: (.*)/);
+
+        updateUI({
+            status: initialStatusText,
+            // Acesso seguro para a propriedade DisplayTimeFormatted, assumindo que foi implementada na Entidade.
+            displayTimeFormatted: initialTimeFormattedMatch ? initialTimeFormattedMatch[1].trim() : "0s",
+            power: initialPowerMatch ? parseInt(initialPowerMatch[1].trim()) : 10,
+            processingString: processString.innerText.trim()
+        });
     </script>
 }

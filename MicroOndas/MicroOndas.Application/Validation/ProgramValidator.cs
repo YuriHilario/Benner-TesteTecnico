@@ -1,9 +1,4 @@
 ﻿using MicroOndas.Application.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MicroOndas.Application.Validation
 {
@@ -16,18 +11,26 @@ namespace MicroOndas.Application.Validation
         private const int DefaultPower = 10; // Requirement F, J
         private const int DefaultTime = 30; // Requirement J
 
-        public static (bool IsValid, string Message, int FinalTime, int FinalPower) ValidateAndProcess(ProgramInputDto input, bool isQuickStart = false)
+        /// <summary>
+        /// Valida e processa as entradas.
+        /// </summary>
+        /// <returns>
+        /// (IsValid, Message, TimeConversionMessage, FinalTime, FinalPower)
+        /// </returns>
+        // NOVA ASSINATURA: Inclui TimeConversionMessage como o terceiro campo de retorno.
+        public static (bool IsValid, string Message, string TimeConversionMessage, int FinalTime, int FinalPower) ValidateAndProcess(ProgramInputDto input, bool isQuickStart = false)
         {
             int finalTime;
             int finalPower;
-            string timeMessage = null;
+            string timeConversionMessage = null; // Nova variável para Req G
 
             // --- 1. Quick Start Logic (Requirement J) ---
             if (isQuickStart)
             {
                 finalTime = DefaultTime;
                 finalPower = DefaultPower;
-                return (true, "Quick Start (30s, Power 10) validated.", finalTime, finalPower);
+                // Retorno de Quick Start, com o novo campo como null
+                return (true, "Quick Start (30s, Power 10) validated.", null, finalTime, finalPower);
             }
 
             // --- 2. Power Validation (Requirements F, I) ---
@@ -35,8 +38,8 @@ namespace MicroOndas.Application.Validation
             {
                 if (input.Power < MinPower || input.Power > MaxPower)
                 {
-                    // Requirement I: Invalid Power message
-                    return (false, $"Invalid Power. Must be between {MinPower} and {MaxPower}.", 0, 0);
+                    // Retorno de erro, com o novo campo como null
+                    return (false, $"Invalid Power. Must be between {MinPower} and {MaxPower}.", null, 0, 0);
                 }
                 finalPower = input.Power.Value;
             }
@@ -49,15 +52,16 @@ namespace MicroOndas.Application.Validation
             // --- 3. Time Validation (Requirements E, H, G) ---
             if (!input.TimeInSeconds.HasValue)
             {
-                return (false, "Time is mandatory for standard heating.", 0, 0);
+                // Retorno de erro, com o novo campo como null
+                return (false, "Time is mandatory for standard heating.", null, 0, 0);
             }
 
             int inputTime = input.TimeInSeconds.Value;
 
             if (inputTime < MinTime || inputTime > MaxTime)
             {
-                // Requirement H: Time out of defined limits
-                return (false, $"Invalid Time. Must be between {MinTime} and {MaxTime} seconds (1 second to 2 minutes).", 0, 0);
+                // Retorno de erro, com o novo campo como null
+                return (false, $"Invalid Time. Must be between {MinTime} and {MaxTime} seconds (1 second to 2 minutes).", null, 0, 0);
             }
 
             // Requirement G: Time conversion check (80 < Time < 100)
@@ -65,13 +69,14 @@ namespace MicroOndas.Application.Validation
             {
                 int minutes = inputTime / 60;
                 int seconds = inputTime % 60;
-                // Note: The conversion is for display only, the time used is the input time.
-                timeMessage = $"Conversion Note (Req G): {inputTime} seconds is displayed as {minutes} minute(s) and {seconds} second(s).";
+                // Atribui a mensagem de conversão à nova variável
+                timeConversionMessage = $"Nota de Conversão (Req G): {inputTime} segundos são exibidos como {minutes} minuto(s) e {seconds} segundo(s).";
             }
 
             finalTime = inputTime;
 
-            return (true, timeMessage, finalTime, finalPower);
+            // Retorno final de sucesso, incluindo a mensagem de conversão (pode ser null)
+            return (true, "Heating initiated.", timeConversionMessage, finalTime, finalPower);
         }
     }
 }

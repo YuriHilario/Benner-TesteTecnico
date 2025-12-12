@@ -2,16 +2,17 @@
 using MicroOndas.Domain.Enums;
 using MicroOndas.Web.Hubs;
 using Microsoft.AspNetCore.SignalR;
-
-// NOTE: A classe BackgroundService requer o using Microsoft.Extensions.Hosting.
-// Assumindo que você tem essa dependência.
+using Microsoft.Extensions.Hosting; // Necessário para BackgroundService
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 public class MicroOndasTimerService : BackgroundService
 {
     private readonly MicroOndasService _microondasService;
     private readonly IHubContext<MicroOndasHub> _hubContext;
     private Timer _timer;
-    private readonly TimeSpan _period = TimeSpan.FromSeconds(1);
+    private readonly TimeSpan _period = TimeSpan.FromSeconds(1); // 1 segundo
 
     public MicroOndasTimerService(MicroOndasService microondasService, IHubContext<MicroOndasHub> hubContext)
     {
@@ -28,29 +29,28 @@ public class MicroOndasTimerService : BackgroundService
 
     private async void DoWork(object state) // Usamos async void pois contém uma chamada async (SendAsync)
     {
-        // O TimerService chama o ProcessOneSecond que atualiza a entidade de domínio.
+        // O TimerService chama o ProcessOneSecond que atualiza a entidade de domínio a cada tick.
         var status = _microondasService.ProcessOneSecond();
 
         if (status != null && status.Status != HeatingStatus.Stopped)
         {
-            // Mapeamento do status para JSON a ser enviado via SignalR
+            // Mapeamento do status para um objeto anônimo (DTO) a ser enviado via SignalR
             var statusData = new
             {
+                // Status (InProgress, Paused, Completed)
                 Status = status.Status.ToString(),
 
-                // CORREÇÃO: Mudar TimeRemaining para Time para alinhar com o JavaScript e Index.cshtml.cs
-                Time = status.TimeRemaining,
+                // CORREÇÃO CRÍTICA: Envia a string de display formatada (M:SS ou XXs)
+                DisplayTimeFormatted = status.DisplayTimeFormatted,
 
+                // Power da HeatingProgram
                 Power = status.Power,
 
-                // REMOÇÃO: A propriedade Display foi removida, pois a string é montada no JavaScript
-                // ProcessingString - OK
+                // ProcessingString (os pontos '....')
                 ProcessingString = status.ProcessingString
             };
 
-            // Envia o status para todos os clientes (operação fire-and-forget)
-            // É seguro usar await em async void aqui para melhor tratamento de exceções,
-            // mas o uso de SendAsync é um fire-and-forget, então a Task não atrapalha o Timer.
+            // Envia o status para todos os clientes conectados ao hub
             await _hubContext.Clients.All.SendAsync("ReceiveStatus", statusData);
         }
     }
