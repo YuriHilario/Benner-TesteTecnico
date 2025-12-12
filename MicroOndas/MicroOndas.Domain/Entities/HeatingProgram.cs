@@ -19,29 +19,34 @@ namespace MicroOndas.Domain.Entities
         // Propriedade para o display formatado (MM:SS ou XXs) - Requisito G
         public string DisplayTimeFormatted { get; private set; } = string.Empty;
 
-        public HeatingProgram(int timeInSeconds, int power)
+        // NOVO: Rastreia o caractere de aquecimento (Nível 2, Req b)
+        public char HeatingChar { get; private set; } = '.';
+
+        // NOVO: Rastreia se é um programa pré-definido (Nível 2, Req e)
+        public bool IsPredefinedProgram { get; private set; }
+
+        public HeatingProgram(int timeInSeconds, int power, char heatingChar = '.', bool isPredefined = false)
         {
             TimeInSeconds = timeInSeconds;
             Power = power;
             TimeRemaining = timeInSeconds;
+            HeatingChar = heatingChar; // Define o caractere
+            IsPredefinedProgram = isPredefined; // Define o tipo de programa
+
             // Chamada inicial para preencher o DisplayTimeFormatted corretamente
             UpdateDisplayTime();
         }
 
         /// <summary>
-        /// CRÍTICO: Agora PUBLIC para ser acessível pelo MicroOndasService.
         /// Centraliza a lógica de formato de tempo (Requisito G).
-        /// O display deve mostrar M:SS sempre que o tempo restante for >= 60 segundos.
         /// </summary>
         public void UpdateDisplayTime()
         {
-            // Se o tempo restante for maior ou igual a 60 segundos, mostramos M:SS.
             if (TimeRemaining >= 60)
             {
                 int minutes = TimeRemaining / 60;
                 int seconds = TimeRemaining % 60;
-
-                // Formata como M:SS. O ":D2" garante dois dígitos para segundos (ex: 1:05)
+                // Formato M:SS para segundos
                 DisplayTimeFormatted = $"{minutes}:{seconds:D2}";
             }
             else
@@ -71,10 +76,11 @@ namespace MicroOndas.Domain.Entities
                 // AÇÃO OBRIGATÓRIA: Atualiza a string formatada a cada segundo
                 UpdateDisplayTime();
 
-                // Requirement L: Add Power dots ('.') per second
+                // Requirement L e Nível 2 (Req b): Add Power dots/char per second
                 for (int i = 0; i < Power; i++)
                 {
-                    ProcessingString += ".";
+                    // Usa HeatingChar dinamicamente ('.' ou 'P', 'L', 'C', 'F', 'Z' do Nível 2)
+                    ProcessingString += HeatingChar;
                 }
             }
 

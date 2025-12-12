@@ -1,4 +1,5 @@
 using MicroOndas.Application.Services;
+using MicroOndas.Domain.Interfaces;
 using MicroOndas.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,8 @@ builder.Services.AddSingleton<MicroOndasService>();
 // 2. Injeção do Background Service (Timer)
 // Responsável por executar o timer a cada segundo e chamar ProcessOneSecond().
 builder.Services.AddHostedService<MicroOndasTimerService>();
+
+builder.Services.AddSingleton<IPredefinedProgramRepository, PredefinedProgramRepository>();
 
 // 3. Injeção do SignalR
 // Necessário para permitir a comunicação em tempo real (push) para o navegador.

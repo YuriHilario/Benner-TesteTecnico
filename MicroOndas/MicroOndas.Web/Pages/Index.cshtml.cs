@@ -1,11 +1,14 @@
+using MicroOndas.Application.DTOs;
 using MicroOndas.Application.Services;
 using MicroOndas.Domain.Entities;
 using MicroOndas.Domain.Enums;
-using MicroOndas.Application.DTOs;
+using MicroOndas.Domain.Interfaces;
 using MicroOndas.Web.Hubs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.SignalR;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace MicroOndas.Web.Pages
@@ -13,147 +16,184 @@ namespace MicroOndas.Web.Pages
     public class IndexModel : PageModel
     {
         private readonly MicroOndasService _microondasService;
-        private readonly IHubContext<MicroOndasHub> _hubContext; // Injeção do SignalR Hub
+        private readonly IHubContext<MicroOndasHub> _hubContext;
+        // NOVO: Repositório injetado para carregar a lista de programas (Nível 2)
+        private readonly IPredefinedProgramRepository _programRepository;
 
         // Estado do Micro-Ondas (acessível pelo Razor e pelos Handlers)
         public HeatingProgram CurrentHeatingStatus { get; set; } = new HeatingProgram(0, 10);
         public string Message { get; set; } = string.Empty;
         public string ErrorMessage { get; set; } = string.Empty;
+        public string TimeConversionMessage { get; set; } = string.Empty; // Requisito G
 
-        // Propriedade para a mensagem de conversão de tempo (Requisito G)
-        public string TimeConversionMessage { get; set; } = string.Empty;
+        // NOVO: Propriedade para as instruções complementares (Nível 2, Req a)
+        public string InstructionsMessage { get; set; } = string.Empty;
 
-        // Propriedades para input manual
+        // Propriedades para input manual (Nível 1)
         [BindProperty]
-        public int InputTime { get; set; } = 30; // Valor inicial
+        public int InputTime { get; set; } = 30;
         [BindProperty]
-        public int InputPower { get; set; } = 10; // Valor inicial
+        public int InputPower { get; set; } = 10;
 
-        public IndexModel(MicroOndasService microondasService, IHubContext<MicroOndasHub> hubContext)
+        // NOVO: Propriedade para seleção do programa pré-definido (Nível 2)
+        [BindProperty]
+        public string SelectedProgramName { get; set; } = string.Empty;
+
+        // NOVO: Lista de programas para o dropdown no Razor (Nível 2, Req a)
+        public IEnumerable<PredefinedProgram> PredefinedPrograms { get; set; } = Enumerable.Empty<PredefinedProgram>();
+
+        // ATUALIZAR CONSTRUTOR para injeção do repositório (Nível 2)
+        public IndexModel(MicroOndasService microondasService, IHubContext<MicroOndasHub> hubContext, IPredefinedProgramRepository programRepository)
         {
             _microondasService = microondasService;
-            _hubContext = hubContext; // Inicialização do HubContext
+            _hubContext = hubContext;
+            _programRepository = programRepository;
         }
 
-        // Chamado ao carregar a página
         public void OnGet()
         {
-            // Busca o status atual para renderizar o estado inicial
+            // Carrega os programas pré-definidos para o dropdown (Nível 2, Req a)
+            PredefinedPrograms = _programRepository.GetAllPrograms();
             CurrentHeatingStatus = _microondasService.GetCurrentStatus();
         }
 
-        // ====================================================================
-        // 1. HANDLERS DE INÍCIO DE AQUECIMENTO
-        // ====================================================================
-
-        // Handler para Início Manual (Requisitos A, B, C, D)
-        public Task<IActionResult> OnPostStartHeating()
+        // --- NOVO HANDLER: Iniciar Programa Pré-Definido (Nível 2) ---
+        public async Task<IActionResult> OnPostStartPredefinedHeating()
         {
-            var input = new ProgramInputDto
+            if (string.IsNullOrEmpty(SelectedProgramName))
             {
-                TimeInSeconds = InputTime,
-                Power = InputPower
-            };
-            // Início manual: input preenchido, não é Quick Start.
-            return HandleHeatingStart(input, isQuickStart: false);
-        }
+                ErrorMessage = "Selecione um programa de aquecimento pré-definido.";
+                OnGet();
+                return Page();
+            }
 
-        // Handler para Quick Start (Requisito J)
-        public Task<IActionResult> OnPostQuickStart()
-        {
-            // Quick Start: input vazio (o validador ignora), 'isQuickStart: true'.
-            return HandleHeatingStart(new ProgramInputDto(), isQuickStart: true);
-        }
-
-        // Handler para Retomar o Aquecimento (Requisito M)
-        public Task<IActionResult> OnPostContinue()
-        {
-            // Retomada: input vazio/nulo (o serviço identifica o status Paused), 'isQuickStart: false'.
-            return HandleHeatingStart(new ProgramInputDto(), isQuickStart: false);
-        }
-
-        // Handler para Adicionar +30 segundos (Requisito K)
-        public Task<IActionResult> OnPostAddThirtySeconds()
-        {
-            // +30s: input vazio/nulo (o serviço identifica o status InProgress/Paused), 'isQuickStart: false'.
-            return HandleHeatingStart(new ProgramInputDto(), isQuickStart: false);
-        }
-
-        // ====================================================================
-        // MÉTODO UNIFICADO PARA INICIAR/RETOMAR/INCREMENTAR
-        // ====================================================================
-        private async Task<IActionResult> HandleHeatingStart(ProgramInputDto input, bool isQuickStart)
-        {
-            // Chama o StartHeating no serviço, que lida com Quick Start, Retomada e +30s.
-            var (success, message, timeConversionMessage) = _microondasService.StartHeating(input, isQuickStart);
+            var (success, message, instructions) = _microondasService.StartPredefinedHeating(SelectedProgramName);
 
             if (success)
             {
-                CurrentHeatingStatus = _microondasService.GetCurrentStatus();
                 Message = message;
-                TimeConversionMessage = timeConversionMessage; // Exibe a mensagem de conversão (Req. G)
+                InstructionsMessage = instructions; // Exibe as instruções (Nível 2, Req a)
+                TimeConversionMessage = string.Empty; // Limpa a mensagem de conversão (que é só para manual)
 
-                // 1. Monta o DTO com o status atualizado
-                var currentStatus = new
-                {
-                    Status = CurrentHeatingStatus.Status.ToString(),
-                    // A nova propriedade DisplayTimeFormatted deve ser usada se implementada no HeatingProgram, 
-                    // mas mantemos TimeRemaining aqui se o frontend espera 'Time'.
-                    Time = CurrentHeatingStatus.TimeRemaining,
-                    Power = CurrentHeatingStatus.Power,
-                    ProcessingString = CurrentHeatingStatus.ProcessingString
-                };
-
-                // 2. Envia a mensagem SignalR Imediatamente para atualizar o display (CRÍTICO para Quick Start/Resume/+30s)
-                await _hubContext.Clients.All.SendAsync("ReceiveStatus", currentStatus);
-
+                await SendCurrentStatusUpdate();
                 return RedirectToPage();
             }
             else
             {
                 ErrorMessage = message;
+                OnGet();
                 return Page();
             }
         }
 
-        // ====================================================================
-        // 2. HANDLERS DE CONTROLE (PAUSE/CANCEL)
-        // ====================================================================
+        // Handler para Iniciar Aquecimento Manual ou +30s (Nível 1, Requisitos C, K)
+        public async Task<IActionResult> OnPostStartHeating()
+        {
+            var inputDto = new ProgramInputDto
+            {
+                TimeInSeconds = InputTime,
+                Power = InputPower
+            };
 
-        // Handler para Pausar Aquecimento (Requisito M)
+            var (success, message, timeConversionMessage) = _microondasService.StartHeating(inputDto, isQuickStart: false);
+
+            if (success)
+            {
+                Message = message;
+                TimeConversionMessage = timeConversionMessage; // Requisito G
+                InstructionsMessage = string.Empty; // Limpar instruções se for manual
+
+                await SendCurrentStatusUpdate();
+                return RedirectToPage();
+            }
+            else
+            {
+                ErrorMessage = message;
+                OnGet();
+                return Page();
+            }
+        }
+
+        // Handler para Quick Start (Nível 1, Requisito J)
+        public async Task<IActionResult> OnPostQuickStart()
+        {
+            var inputDto = new ProgramInputDto
+            {
+                // Os valores são ignorados pelo Service, que usa os defaults (30s, P10)
+                TimeInSeconds = null,
+                Power = null
+            };
+
+            var (success, message, _) = _microondasService.StartHeating(inputDto, isQuickStart: true);
+
+            if (success)
+            {
+                Message = message;
+                TimeConversionMessage = string.Empty;
+                InstructionsMessage = string.Empty;
+
+                await SendCurrentStatusUpdate();
+                return RedirectToPage();
+            }
+            else
+            {
+                ErrorMessage = message;
+                OnGet();
+                return Page();
+            }
+        }
+
+        // Handler para Pausar Aquecimento (Requisito M, Nível 2 Req f)
         public async Task<IActionResult> OnPostPause()
         {
             _microondasService.PauseHeating();
             Message = "Aquecimento Pausado.";
 
-            // Envia o status atualizado imediatamente via SignalR
             await SendCurrentStatusUpdate();
-
             return RedirectToPage();
         }
 
-        // Handler para Cancelar Aquecimento (Requisito N)
+        // Handler para Continuar Aquecimento (Requisito M, Nível 2 Req f)
+        public async Task<IActionResult> OnPostContinue()
+        {
+            // O StartHeating já contém a lógica de 'resume' se o status for Paused.
+            var (success, message, _) = _microondasService.StartHeating(new ProgramInputDto(), isQuickStart: false);
+
+            if (success)
+            {
+                Message = message;
+                await SendCurrentStatusUpdate();
+                return RedirectToPage();
+            }
+            else
+            {
+                ErrorMessage = "Erro ao tentar continuar o aquecimento.";
+                OnGet();
+                return Page();
+            }
+        }
+
+        // Handler para Cancelar Aquecimento (Requisito N, Nível 2 Req f)
         public async Task<IActionResult> OnPostCancel()
         {
             _microondasService.CancelHeating();
             Message = "Aquecimento Cancelado.";
 
-            // Envia o status atualizado imediatamente via SignalR
             await SendCurrentStatusUpdate();
 
             return RedirectToPage();
         }
 
-        // Handler para Limpar Mensagens (Geralmente usado após Completed/Stopped para resetar a tela)
+        // Handler para Limpar Mensagens
         public IActionResult OnPostClear()
         {
-            // Apenas recarrega a página, limpando mensagens (já que o Cancel é feito no OnPostCancel)
+            // Apenas recarrega a página, limpando mensagens
             return RedirectToPage();
         }
 
-        // ====================================================================
-        // MÉTODO AUXILIAR SIGNALR
-        // ====================================================================
+        // ====================================================================\r\n
+        // MÉTODO AUXILIAR SIGNALR (Modificado para incluir DisplayTimeFormatted e IsPredefinedProgram)
+        // ====================================================================\r\n
         private async Task SendCurrentStatusUpdate()
         {
             var status = _microondasService.GetCurrentStatus();
@@ -162,9 +202,12 @@ namespace MicroOndas.Web.Pages
             var currentStatus = new
             {
                 Status = status.Status.ToString(),
-                Time = status.TimeRemaining,
+                // Usa DisplayTimeFormatted (M:SS ou XXs)
+                DisplayTimeFormatted = status.DisplayTimeFormatted,
                 Power = status.Power,
-                ProcessingString = status.ProcessingString
+                ProcessingString = status.ProcessingString,
+                // NOVO: Informação para o front-end (Req e)
+                IsPredefinedProgram = status.IsPredefinedProgram
             };
 
             // Envia a mensagem SignalR imediatamente
