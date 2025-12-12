@@ -1,0 +1,159 @@
+﻿@page
+@using MicroOndas.Domain.Enums
+@model IndexModel
+@{
+    ViewData["Title"] = "Digital Micro-Oven";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Digital Micro-Oven</h1>
+    <p>Set time (1-120s) and power (1-10, default 10).</p>
+    <hr />
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(Model.Message))
+    {
+        <div class="alert alert-warning">@Model.Message</div>
+    }
+
+    <div id="status-display" class="border p-4 mb-4 bg-dark text-light">
+        @{
+            string statusText = Model.CurrentHeatingStatus?.Status.ToString() ?? "Stopped";
+            string timerDisplay = "Ready to program";
+            string processString = Model.CurrentHeatingStatus?.ProcessingString ?? "";
+
+            if (Model.CurrentHeatingStatus != null && Model.CurrentHeatingStatus.Status != HeatingStatus.Stopped)
+            {
+                timerDisplay = $"Time Remaining: {Model.CurrentHeatingStatus.TimeRemaining}s | Power: {Model.CurrentHeatingStatus.Power}";
+            }
+        }
+
+        <h3 id="status-text">
+            @statusText
+        </h3>
+        <p id="timer-label">
+            @timerDisplay
+        </p>
+        <div id="process-string">@processString</div>
+    </div>
+
+    <form method="post">
+
+        <div class="form-group row mb-3">
+            <label asp-for="InputTime" class="col-sm-4 col-form-label">Time (seconds)</label>
+            <div class="col-sm-8">
+                <input asp-for="InputTime" class="form-control" type="number" min="1" max="120" />
+            </div>
+        </div>
+
+        <div class="form-group row mb-4">
+            <label asp-for="InputPower" class="col-sm-4 col-form-label">Power (1-10)</label>
+            <div class="col-sm-8">
+                <input asp-for="InputPower" class="form-control" type="number" min="1" max="10" />
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-block">
+            <button type="submit" asp-page-handler="Start" class="btn btn-success btn-lg">
+                @{
+                    string startButtonText = "Start";
+                    if (Model.CurrentHeatingStatus?.Status == HeatingStatus.InProgress)
+                    {
+                        startButtonText = "+30s"; // Requisito K
+                    }
+                    else if (Model.CurrentHeatingStatus?.Status == HeatingStatus.Paused)
+                    {
+                        startButtonText = "Continue"; // Requisito M
+                    }
+                }
+                @startButtonText
+            </button>
+
+            <button type="submit" asp-page-handler="QuickStart" class="btn btn-info btn-lg">Quick Start</button>
+
+            <button type="submit" asp-page-handler="PauseOrCancel" class="btn btn-danger btn-lg">
+                @{
+                    string pauseCancelButtonText = "Clear";
+                    if (Model.CurrentHeatingStatus?.Status == HeatingStatus.InProgress)
+                    {
+                        pauseCancelButtonText = "Pause"; // Requisito M
+                    }
+                    else if (Model.CurrentHeatingStatus?.Status == HeatingStatus.Paused)
+                    {
+                        pauseCancelButtonText = "Cancel"; // Requisito N
+                    }
+                }
+                @pauseCancelButtonText
+            </button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
+
+    <script>
+        // Cria conexão com o Hub
+        var connection = new signalR.HubConnectionBuilder()
+            .withUrl("/microondashub")
+            .build();
+
+        // ================================
+        // LISTENER DO SIGNALR (RECEBE STATUS)
+        // ================================
+        connection.on("ReceiveStatus", function (data) {
+
+            // Proteção contra "undefined"
+            if (!data) return;
+
+            console.log("Status recebido:", data);
+
+            // Atualiza texto status principal
+            document.getElementById("status-text").innerText =
+                data.Status ?? "Waiting";
+
+            // Atualiza string de display
+            const time = data.TimeRemaining ?? data.Time ?? 0;
+            const power = data.PowerLevel ?? data.Power ?? 0;
+
+            var displayString = `Time Remaining: ${time}s | Power: ${power}`;
+            document.getElementById("timer-label").innerText = displayString;
+
+            // Atualiza string de processamento (ex: "...", ".....")
+            document.getElementById("process-string").innerText =
+                data.ProcessingString ?? "";
+
+            // Lógica para recarregar a página após Finalizar / Parar / Pausar
+            const finished = "@HeatingStatus.Completed.ToString()";
+            const paused = "@HeatingStatus.Paused.ToString()";
+            const stopped = "@HeatingStatus.Stopped.ToString()";
+
+            if (data.Status === finished ||
+                data.Status === paused ||
+                data.Status === stopped) {
+
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+            }
+        });
+
+        // ================================
+        // START DA CONEXÃO
+        // ================================
+        connection.start().then(() => {
+            console.log("Connected to Hub");
+
+            // Solicitar estado inicial ao carregar a página
+            connection.invoke("SendCurrentStatus")
+                .catch(err => console.error("Erro ao solicitar estado inicial:", err));
+
+        }).catch(err => {
+            console.error("Erro ao conectar ao hub:", err);
+        });
+
+    </script>
+}
