@@ -1,60 +1,52 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using MicroOndas.Application.Services;
-using MicroOndas.Domain.Enums;
-using System.Threading.Tasks;
 
 namespace MicroOndas.Web.Hubs
 {
     /// <summary>
-    /// Hub responsável por enviar ao front-end o estado atual do micro-ondas.
-    /// O BackgroundService (MicroOndasTimerService) chama SendCurrentStatus() a cada segundo.
+    /// Hub responsável exclusivamente por transmitir o estado do micro-ondas
+    /// para os clientes conectados via SignalR.
+    ///
+    /// IMPORTANTE:
+    /// - Este Hub NÃO contém lógica de negócio
+    /// - Ele NÃO acessa Services ou Domínio
+    /// - Ele atua apenas como canal de comunicação
+    ///
+    /// O envio das mensagens é feito exclusivamente pelo
+    /// MicroOndasTimerService através do IHubContext.
     /// </summary>
     public class MicroOndasHub : Hub
     {
-        private readonly MicroOndasService _microOndasService;
-
-        public MicroOndasHub(MicroOndasService microOndasService)
-        {
-            _microOndasService = microOndasService;
-        }
-
-        /// <summary>
-        /// Envia o estado atual do micro-ondas ao cliente.
-        /// Chamado pelo TimerService e também quando a página abre (via JS) para status inicial.
-        /// </summary>
-        public async Task SendCurrentStatus()
-        {
-            var program = _microOndasService.GetCurrentStatus();
-
-            // Monta DTO para o SignalR
-            var dto = new HeatingStatusDto
-            {
-                Status = program.Status.ToString(),
-                // CRÍTICO: Usa a nova propriedade de string formatada (M:SS ou XXs)
-                DisplayTimeFormatted = program.DisplayTimeFormatted,
-                Power = program.Power,
-                ProcessingString = program.ProcessingString
-            };
-
-            await Clients.All.SendAsync("ReceiveStatus", dto);
-        }
-
-        // Nota: O método SendStatusUpdate foi removido se ele apenas duplicava SendCurrentStatus. 
-        // O TimerService agora chama diretamente SendCurrentStatus.
+        // Hub propositalmente vazio.
+        // Mantido apenas como endpoint SignalR.
     }
 
     /// <summary>
-    /// DTO enviado ao SignalR — padronizado e completo.
-    /// OBS: O campo 'Time' (int) foi substituído por 'DisplayTimeFormatted' (string) para suportar a conversão M:SS.
+    /// DTO padronizado enviado ao front-end via SignalR.
+    /// Representa o estado atual do micro-ondas.
     /// </summary>
     public class HeatingStatusDto
     {
+        /// <summary>
+        /// Estado atual do aquecimento:
+        /// Stopped, InProgress, Paused, Completed, Canceled
+        /// </summary>        
         public string Status { get; set; } = string.Empty;
 
-        // NOVO/ATUALIZADO: Campo para a visualização formatada (M:SS ou XXs).
+        /// <summary>
+        /// Tempo formatado para exibição (M:SS ou XXs),
+        /// conforme requisito do Nível 1.
+        /// </summary>
         public string DisplayTimeFormatted { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Potência atual do aquecimento.
+        /// </summary>
         public int Power { get; set; }
+
+        /// <summary>
+        /// String de processamento do aquecimento
+        /// (caracteres exibidos durante o processo).
+        /// </summary>
         public string ProcessingString { get; set; } = string.Empty;
     }
 }
