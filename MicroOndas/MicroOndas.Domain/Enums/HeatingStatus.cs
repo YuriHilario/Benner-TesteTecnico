@@ -11,6 +11,7 @@ namespace MicroOndas.Domain.Enums
         Stopped,
         InProgress,
         Paused,
-        Completed
+        Completed,
+        Canceled
     }
 }

@@ -6,12 +6,12 @@
 @{
     ViewData["Title"] = "Digital Micro-Oven";
 
-    // Variável de conveniência para verificar o estado de aquecimento ou pausa
-    bool isHeating = Model.CurrentHeatingStatus.Status == HeatingStatus.InProgress ||
-                     Model.CurrentHeatingStatus.Status == HeatingStatus.Paused;
+    bool isHeating =
+        Model.CurrentHeatingStatus.Status == HeatingStatus.InProgress ||
+        Model.CurrentHeatingStatus.Status == HeatingStatus.Paused;
 
-    // Determina se os botões de controle devem aparecer
-    bool showControlButtons = isHeating || Model.CurrentHeatingStatus.Status == HeatingStatus.Completed;
+    bool showControlButtons =
+        isHeating || Model.CurrentHeatingStatus.Status == HeatingStatus.Completed;
 }
 
 <div class="text-center">
@@ -19,107 +19,120 @@
     <p>Set time (1-120s) and power (1-10, default 10).</p>
     <hr />
 
-    @* Exibição de Mensagens (Erro, Sucesso, Conversão) *@
+    @* ===== MENSAGENS ===== *@
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
         <div class="alert alert-danger">@HtmlEncoder.Default.Encode(Model.ErrorMessage)</div>
     }
+
     @if (!string.IsNullOrEmpty(Model.Message))
     {
         <div class="alert alert-warning">@HtmlEncoder.Default.Encode(Model.Message)</div>
     }
+
     @if (!string.IsNullOrEmpty(Model.TimeConversionMessage))
     {
-        <div class="alert alert-info">
-            @HtmlEncoder.Default.Encode(Model.TimeConversionMessage)
-        </div>
+        <div class="alert alert-info">@HtmlEncoder.Default.Encode(Model.TimeConversionMessage)</div>
     }
 
-    @* NOVO: Exibição das Instruções Complementares (Nível 2, Req a) *@
     @if (!string.IsNullOrEmpty(Model.InstructionsMessage))
     {
         <div class="alert alert-success mt-3">
-            <strong>Instruções:</strong> @HtmlEncoder.Default.Encode(Model.InstructionsMessage)
+            <strong>Instruções:</strong>
+            @HtmlEncoder.Default.Encode(Model.InstructionsMessage)
         </div>
     }
 
-    @* Display Principal (Atualizado pelo SignalR) *@
+    @* ===== DISPLAY PRINCIPAL ===== *@
     <div id="status-display" class="border p-4 mb-4 bg-dark text-light">
         @{
-            // Usa o DisplayTimeFormatted para garantir o formato correto (M:SS ou XXs)
-            string timerDisplay = Model.CurrentHeatingStatus?.Status == HeatingStatus.Stopped ? "Ready to program" : Model.CurrentHeatingStatus?.DisplayTimeFormatted;
+            string statusText = Model.CurrentHeatingStatus.Status.ToString();
+            string timerDisplay =
+            Model.CurrentHeatingStatus.Status == HeatingStatus.Stopped
+            ? "Ready to program"
+            : Model.CurrentHeatingStatus.DisplayTimeFormatted;
 
-            // Certifica-se de que a potência e o status estejam sempre visíveis
-            string statusText = Model.CurrentHeatingStatus?.Status.ToString() ?? "Stopped";
-            string powerText = $"Power: {Model.CurrentHeatingStatus?.Power ?? 10}";
-            string processString = Model.CurrentHeatingStatus?.ProcessingString ?? "";
+            string powerText = $"Power: {Model.CurrentHeatingStatus.Power}";
         }
 
         <div id="status-text" style="font-size: 1.5rem;">@statusText</div>
-        <div id="timer-label" style="font-size: 3rem;">@timerDisplay | @powerText</div>
-        <div id="process-string" style="font-size: 2rem; color: yellow;">@processString</div>
+        <div id="timer-label" style="font-size: 3rem;">
+            @timerDisplay | @powerText
+        </div>
+
+        @* LIMITADOR DE TAMANHO (evita crescimento infinito da tela) *@
+        <div id="process-string"
+             style="
+                font-size: 1.8rem;
+                color: yellow;
+                max-height: 120px;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                word-break: break-all;">
+            @Model.CurrentHeatingStatus.ProcessingString
+        </div>
     </div>
 
-    @* =======================================================
-       FORMULÁRIO MANUAL (Nível 1)
-       ======================================================= *@
+    @* =====================================================
+       FORMULÁRIO MANUAL (NÍVEL 1)
+       ===================================================== *@
     <form method="post">
         <div class="row justify-content-center mb-4">
             <div class="col-md-3">
-                <label for="InputTime">Time (s)</label>
-                @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                <input type="number" asp-for="InputTime" class="form-control" min="1" max="120" id="manual-time-input"
+                <label>Time (s)</label>
+                <input asp-for="InputTime" type="number" class="form-control"
+                       min="1" max="120"
                        disabled="@(isHeating || !string.IsNullOrEmpty(Model.SelectedProgramName))" />
             </div>
+
             <div class="col-md-3">
-                <label for="InputPower">Power (1-10)</label>
-                @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                <input type="number" asp-for="InputPower" class="form-control" min="1" max="10" id="manual-power-input"
+                <label>Power (1–10)</label>
+                <input asp-for="InputPower" type="number" class="form-control"
+                       min="1" max="10"
                        disabled="@(isHeating || !string.IsNullOrEmpty(Model.SelectedProgramName))" />
             </div>
         </div>
 
         <div class="row justify-content-center mb-4">
-            <div class="col-md-6">
-                @* Start Heating Manual: Só pode iniciar se não estiver aquecendo/pausado *@
-                <button type="submit" asp-page-handler="StartHeating" class="btn btn-primary" id="btn-start-manual"
+            <div class="col-md-8">
+                <button type="submit" asp-page-handler="StartHeating"
+                        class="btn btn-primary mr-2"
                         disabled="@(isHeating && Model.CurrentHeatingStatus.Status != HeatingStatus.Paused)">
-                    @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                    <i class="fas fa-play"></i> Start Heating
-                </button>
-                @* Quick Start: Só pode iniciar se não estiver aquecendo/pausado *@
-                <button type="submit" asp-page-handler="QuickStart" class="btn btn-success" id="btn-quickstart"
-                        disabled="@(isHeating)">
-                    @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                    <i class="fas fa-forward"></i> Quick Start (+30s P10)
+                    ▶ Start Heating
                 </button>
 
-                @* CRÍTICO: +30s BLOQUEADO se não estiver InProgress OU se for Programa Pré-Definido (Nível 2, Req e) *@
-                <button type="submit" asp-page-handler="StartHeating" class="btn btn-warning"
-                        disabled="@(Model.CurrentHeatingStatus.Status != HeatingStatus.InProgress || Model.CurrentHeatingStatus.IsPredefinedProgram)"
-                        id="btn-plus-30s">
-                    @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                    <i class="fas fa-plus"></i> +30s
+                <button type="submit" asp-page-handler="QuickStart"
+                        class="btn btn-success mr-2"
+                        disabled="@(isHeating)">
+                    ⏩ Quick Start (+30s)
+                </button>
+
+                <button type="submit" asp-page-handler="StartHeating"
+                        class="btn btn-warning"
+                        disabled="@(Model.CurrentHeatingStatus.Status != HeatingStatus.InProgress
+                                                           || Model.CurrentHeatingStatus.IsPredefinedProgram)">
+                    ➕ +30s
                 </button>
             </div>
         </div>
 
         <hr />
 
-        @* =======================================================
-           NOVO: FORMULÁRIO PROGRAMAS PRÉ-DEFINIDOS (Nível 2)
-           ======================================================= *@
+        @* =====================================================
+           PROGRAMAS PRÉ-DEFINIDOS (NÍVEL 2)
+           ===================================================== *@
         <div class="row justify-content-center mb-4">
             <div class="col-md-6">
-                <label for="SelectedProgramName">Programas Pré-Definidos</label>
-                @* SELECT: Desabilitado se estiver aquecendo/pausado *@
-                <select asp-for="SelectedProgramName" class="form-control" id="program-select"
+                <label>Programas Pré-Definidos</label>
+                <select asp-for="SelectedProgramName"
+                        class="form-control"
                         disabled="@(isHeating)">
-                    @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
                     <option value="">-- Selecione um Programa --</option>
                     @foreach (var program in Model.PredefinedPrograms)
                     {
-                        <option value="@program.Name">@program.Name (@program.Alimento) - P@program.Power - @(program.TimeInSeconds / 60)m</option>
+                        <option value="@program.Name">
+                            @program.Name (@program.Alimento) – P@program.Power – @(program.TimeInSeconds / 60)m
+                        </option>
                     }
                 </select>
             </div>
@@ -127,158 +140,80 @@
 
         <div class="row justify-content-center mb-4">
             <div class="col-md-6">
-                @* Iniciar Programa Selecionado: Desabilitado se estiver aquecendo/pausado *@
-                <button type="submit" asp-page-handler="StartPredefinedHeating" class="btn btn-info" id="btn-predefined-start"
+                <button type="submit"
+                        asp-page-handler="StartPredefinedHeating"
+                        class="btn btn-info"
                         disabled="@(isHeating)">
-                    @* CORREÇÃO RAZOR/DOCKER: Usa disabled="@( expressão )" *@
-                    <i class="fas fa-bolt"></i> Iniciar Programa Selecionado
+                    ⚡ Iniciar Programa Selecionado
                 </button>
             </div>
         </div>
-
     </form>
 
     <hr />
 
-    @* =======================================================
-       BOTÕES DE CONTROLE (Requisitos M, N e Nível 2 Req f)
-       ======================================================= *@
+    @* =====================================================
+       CONTROLES (M, N e NÍVEL 2)
+       ===================================================== *@
     @if (showControlButtons)
     {
-        <form method="post" class="mt-4">
+        <form method="post">
             <div class="row justify-content-center">
+
                 @if (Model.CurrentHeatingStatus.Status == HeatingStatus.InProgress)
                 {
-                    <button type="submit" asp-page-handler="Pause" class="btn btn-secondary mr-2">
-                        <i class="fas fa-pause"></i> Pause
+                    <button asp-page-handler="Pause" class="btn btn-secondary mr-2">
+                        ⏸ Pause
                     </button>
                 }
                 else if (Model.CurrentHeatingStatus.Status == HeatingStatus.Paused)
                 {
-                    <button type="submit" asp-page-handler="Continue" class="btn btn-success mr-2">
-                        <i class="fas fa-redo"></i> Continue
+                    <button asp-page-handler="Continue" class="btn btn-success mr-2">
+                        🔁 Continue
                     </button>
                 }
 
-                @if (Model.CurrentHeatingStatus.Status == HeatingStatus.InProgress || Model.CurrentHeatingStatus.Status == HeatingStatus.Paused)
+                @if (Model.CurrentHeatingStatus.Status is HeatingStatus.InProgress or HeatingStatus.Paused)
                 {
-                    <button type="submit" asp-page-handler="Cancel" class="btn btn-danger mr-2">
-                        <i class="fas fa-times"></i> Cancel
+                    <button asp-page-handler="Cancel" class="btn btn-danger mr-2">
+                        ❌ Cancel
                     </button>
                 }
 
-                @if (Model.CurrentHeatingStatus.Status == HeatingStatus.Completed || Model.CurrentHeatingStatus.Status == HeatingStatus.Stopped)
+                @if (Model.CurrentHeatingStatus.Status is HeatingStatus.Completed or HeatingStatus.Stopped)
                 {
-                    <button type="submit" asp-page-handler="Clear" class="btn btn-secondary">
-                        <i class="fas fa-eraser"></i> Clear Messages
+                    <button asp-page-handler="Clear" class="btn btn-secondary">
+                        🧹 Clear
                     </button>
                 }
             </div>
         </form>
     }
 
-    @* =======================================================
-       Scripts JS/SignalR (PATH, CASE E LOOP CORRIGIDOS)
-       ======================================================= *@
     @section Scripts {
         <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
         <script>
-            // Conexão SignalR
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl("/microondasHub")
                 .build();
 
-            // Referências de UI
             const statusText = document.getElementById("status-text");
             const timerLabel = document.getElementById("timer-label");
             const processString = document.getElementById("process-string");
 
-            // FUNÇÃO DE ATUALIZAÇÃO DA UI
-            function updateUI(data) {
-                // CORREÇÃO CRÍTICA: Uso de camelCase
+            connection.on("ReceiveStatus", data => {
                 statusText.innerText = data.status;
                 timerLabel.innerHTML = `${data.displayTimeFormatted} | Power: ${data.power}`;
                 processString.innerText = data.processingString ?? "";
 
-                // ===========================================
-                // CORREÇÃO DO LOOP: Recarregar APENAS se Completed
-                // ===========================================
-                const finished = "Completed";
-
-                if (data.status === finished) {
-                     // Recarrega a página após a conclusão para atualizar os botões (ex: habilitar Start/Quick Start)
-                     setTimeout(() => {
-                        window.location.reload();
-                     }, 500);
-                }
-
-                // Nota sobre o Cancel: O OnPostCancel (C#) já faz RedirectToPage,
-                // que é um recarregamento, então não precisamos dele aqui no JS.
-            }
-
-            // EVENTO RECEIVE STATUS
-            connection.on("ReceiveStatus", function (data) {
-                updateUI(data);
-            });
-
-            // LÓGICA DE CONTROLE DE INPUTS (Manter o código de controle aqui)
-            document.addEventListener('DOMContentLoaded', function () {
-                // ... (seu código de controle DOMContentLoaded aqui) ...
-                const programSelect = document.getElementById('program-select');
-                const manualTimeInput = document.getElementById('manual-time-input');
-                const manualPowerInput = document.getElementById('manual-power-input');
-                const startManualButton = document.getElementById('btn-start-manual');
-                const quickStartButton = document.getElementById('btn-quickstart');
-                const predefinedStartButton = document.getElementById('btn-predefined-start');
-
-                function setManualInputsDisabled(disabled) {
-                    manualTimeInput.disabled = disabled;
-                    manualPowerInput.disabled = disabled;
-
-                    if (disabled) {
-                        startManualButton.disabled = true;
-                        quickStartButton.disabled = true;
-                    } else {
-                        const isHeatingInitial = @isHeating.ToString().ToLower();
-                        if (!isHeatingInitial) {
-                            startManualButton.disabled = false;
-                            quickStartButton.disabled = false;
-                        }
-                    }
-                }
-
-                function setPredefinedButtonsDisabled(disabled) {
-                    programSelect.disabled = disabled;
-                    predefinedStartButton.disabled = disabled;
-                }
-
-                programSelect.addEventListener('change', function () {
-                    const isProgramSelected = programSelect.value !== '';
-                    setManualInputsDisabled(isProgramSelected);
-                });
-
-                const isInitialProgramSelected = programSelect.value !== '';
-                const isHeatingInitial = @isHeating.ToString().ToLower();
-
-                if (isInitialProgramSelected && !isHeatingInitial) {
-                    setManualInputsDisabled(true);
-                }
-
-                if (isHeatingInitial) {
-                    setManualInputsDisabled(true);
-                    setPredefinedButtonsDisabled(true);
+                if (data.status === "Completed") {
+                    setTimeout(() => location.reload(), 500);
                 }
             });
 
-            // START DA CONEXÃO
-            connection.start().then(() => {
-                console.log("Connected to Hub, requesting initial status...");
-                connection.invoke("SendCurrentStatus")
-                    .catch(err => console.error("Erro ao solicitar estado inicial:", err));
-
-            }).catch(err => {
-                console.error("Erro ao conectar ao hub:", err);
-            });
+            connection.start()
+                .then(() => console.log("SignalR connected"))
+                .catch(err => console.error(err));
         </script>
     }
 </div>

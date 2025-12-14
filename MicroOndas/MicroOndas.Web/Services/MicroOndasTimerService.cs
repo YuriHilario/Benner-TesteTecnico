@@ -2,7 +2,7 @@
 using MicroOndas.Domain.Enums;
 using MicroOndas.Web.Hubs;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Hosting; // Necessário para BackgroundService
+using Microsoft.Extensions.Hosting;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,9 +12,11 @@ public class MicroOndasTimerService : BackgroundService
     private readonly MicroOndasService _microondasService;
     private readonly IHubContext<MicroOndasHub> _hubContext;
     private Timer _timer;
-    private readonly TimeSpan _period = TimeSpan.FromSeconds(1); // 1 segundo
+    private readonly TimeSpan _period = TimeSpan.FromSeconds(1);
 
-    public MicroOndasTimerService(MicroOndasService microondasService, IHubContext<MicroOndasHub> hubContext)
+    public MicroOndasTimerService(
+        MicroOndasService microondasService,
+        IHubContext<MicroOndasHub> hubContext)
     {
         _microondasService = microondasService;
         _hubContext = hubContext;
@@ -22,35 +24,41 @@ public class MicroOndasTimerService : BackgroundService
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Inicia o timer para chamar DoWork a cada 1 segundo (Requisito L)
-        _timer = new Timer(DoWork, null, _period, _period);
+        _timer = new Timer(async _ => await DoWork(), null, _period, _period);
         return Task.CompletedTask;
     }
 
-    private async void DoWork(object state) // Usamos async void pois contém uma chamada async (SendAsync)
+    private async Task DoWork()
     {
-        // O TimerService chama o ProcessOneSecond que atualiza a entidade de domínio a cada tick.
         var status = _microondasService.ProcessOneSecond();
 
-        if (status != null && status.Status != HeatingStatus.Stopped)
+        if (status == null)
+            return;
+
+        // Não envia nada se nunca iniciou
+        if (status.Status == HeatingStatus.Stopped)
+            return;
+
+        var statusData = new
         {
-            // Mapeamento do status para um objeto anônimo (DTO) a ser enviado via SignalR
-            var statusData = new
-            {
-                // Status (InProgress, Paused, Completed)
-                Status = status.Status.ToString(),
+            Status = status.Status.ToString(),
+            DisplayTimeFormatted = status.DisplayTimeFormatted,
+            Power = status.Power,
+            ProcessingString = status.ProcessingString
+        };
 
-                // CORREÇÃO CRÍTICA: Envia a string de display formatada (M:SS ou XXs)
-                DisplayTimeFormatted = status.DisplayTimeFormatted,
+        // Envia sempre enquanto ativo ou pausado
+        if (status.Status == HeatingStatus.InProgress ||
+            status.Status == HeatingStatus.Paused)
+        {
+            await _hubContext.Clients.All.SendAsync("ReceiveStatus", statusData);
+            return;
+        }
 
-                // Power da HeatingProgram
-                Power = status.Power,
-
-                // ProcessingString (os pontos '....')
-                ProcessingString = status.ProcessingString
-            };
-
-            // Envia o status para todos os clientes conectados ao hub
+        // Envia uma última vez ao finalizar ou cancelar
+        if (status.Status == HeatingStatus.Completed ||
+            status.Status == HeatingStatus.Canceled)
+        {
             await _hubContext.Clients.All.SendAsync("ReceiveStatus", statusData);
         }
     }
