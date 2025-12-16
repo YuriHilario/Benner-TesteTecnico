@@ -5,11 +5,9 @@
 
 @{
     ViewData["Title"] = "Digital Micro-Oven";
-
     bool isHeating =
         Model.CurrentHeatingStatus.Status == HeatingStatus.InProgress ||
         Model.CurrentHeatingStatus.Status == HeatingStatus.Paused;
-
     bool showControlButtons =
         isHeating || Model.CurrentHeatingStatus.Status == HeatingStatus.Completed;
 }
@@ -49,15 +47,16 @@
             string statusText = Model.CurrentHeatingStatus.Status.ToString();
             string timerDisplay =
             Model.CurrentHeatingStatus.Status == HeatingStatus.Stopped
-            ? "Ready to program"
+            ?
+            "Ready to program"
             : Model.CurrentHeatingStatus.DisplayTimeFormatted;
-
             string powerText = $"Power: {Model.CurrentHeatingStatus.Power}";
         }
 
         <div id="status-text" style="font-size: 1.5rem;">@statusText</div>
         <div id="timer-label" style="font-size: 3rem;">
-            @timerDisplay | @powerText
+            @timerDisplay |
+            @powerText
         </div>
 
         @* LIMITADOR DE TAMANHO (evita crescimento infinito da tela) *@
@@ -76,6 +75,7 @@
     @* =====================================================
        FORMULÁRIO MANUAL (NÍVEL 1)
        ===================================================== *@
+
     <form method="post">
         <div class="row justify-content-center mb-4">
             <div class="col-md-3">
@@ -89,7 +89,8 @@
                 <label>Power (1–10)</label>
                 <input asp-for="InputPower" type="number" class="form-control"
                        min="1" max="10"
-                       disabled="@(isHeating || !string.IsNullOrEmpty(Model.SelectedProgramName))" />
+                       disabled="@(isHeating ||
+                                              !string.IsNullOrEmpty(Model.SelectedProgramName))" />
             </div>
         </div>
 
@@ -110,7 +111,8 @@
                 <button type="submit" asp-page-handler="StartHeating"
                         class="btn btn-warning"
                         disabled="@(Model.CurrentHeatingStatus.Status != HeatingStatus.InProgress
-                                                           || Model.CurrentHeatingStatus.IsPredefinedProgram)">
+                                                                                   ||
+                                                                                   Model.CurrentHeatingStatus.IsPredefinedProgram)">
                     ➕ +30s
                 </button>
             </div>
@@ -131,6 +133,7 @@
                     @foreach (var program in Model.PredefinedPrograms)
                     {
                         <option value="@program.Name">
+                            @* CORREÇÃO APLICADA: Substituído @program.Description por @program.Food *@
                             @program.Name (@program.Food) – P@program.Power – @(program.TimeInSeconds / 60)m
                         </option>
                     }
@@ -190,13 +193,64 @@
         </form>
     }
 
+    @* =====================================================
+       FORMULÁRIO DE INCLUSÃO DE NOVOS PROGRAMAS (NOVO)
+       ===================================================== *@
+    <hr />
+    <h2>➕ Criar Novo Programa Personalizado</h2>
+    <p class="text-muted">
+        Defina um programa com Nome, Alimento, Tempo (1-120s), Potência (1-10), Caractere de Aquecimento (diferente de '*') e Instruções.
+    </p>
+
+    <form method="post" asp-page-handler="AddProgram">
+        <div class="row justify-content-center mb-3">
+            <div class="col-md-4">
+                <label asp-for="NewProgram.Name">Nome do Programa</label>
+                <input asp-for="NewProgram.Name" class="form-control" required />
+            </div>
+            <div class="col-md-4">
+                <label asp-for="NewProgram.Food">Alimento/Descrição</label>
+                <input asp-for="NewProgram.Food" class="form-control" required />
+            </div>
+        </div>
+
+        <div class="row justify-content-center mb-3">
+            <div class="col-md-2">
+                <label asp-for="NewProgram.TimeInSeconds">Tempo (s)</label>
+                <input asp-for="NewProgram.TimeInSeconds" type="number" class="form-control" min="1" required />
+            </div>
+            <div class="col-md-2">
+                <label asp-for="NewProgram.Power">Potência (1-10)</label>
+                <input asp-for="NewProgram.Power" type="number" class="form-control" min="1" max="10" required />
+            </div>
+            <div class="col-md-2">
+                <label asp-for="NewProgram.HeatingChar">Caractere</label>
+                <input asp-for="NewProgram.HeatingChar" maxlength="1" class="form-control" required />
+            </div>
+        </div>
+
+        <div class="row justify-content-center mb-3">
+            <div class="col-md-8">
+                <label asp-for="NewProgram.Instructions">Instruções</label>
+                <textarea asp-for="NewProgram.Instructions" rows="3" class="form-control"></textarea>
+            </div>
+        </div>
+
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-8">
+                <button type="submit" class="btn btn-primary btn-block mt-2">
+                    💾 Salvar Novo Programa
+                </button>
+            </div>
+        </div>
+    </form>
+
     @section Scripts {
         <script src="~/lib/microsoft/signalr/dist/browser/signalr.js"></script>
         <script>
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl("/microondasHub")
                 .build();
-
             const statusText = document.getElementById("status-text");
             const timerLabel = document.getElementById("timer-label");
             const processString = document.getElementById("process-string");

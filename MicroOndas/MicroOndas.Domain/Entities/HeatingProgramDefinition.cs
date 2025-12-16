@@ -9,7 +9,6 @@ namespace MicroOndas.Domain.Entities
     public class HeatingProgramDefinition
     {
         public int Id { get; private set; }
-
         public string Name { get; private set; }
         public string Food { get; private set; }
         public int TimeInSeconds { get; private set; }
@@ -17,6 +16,7 @@ namespace MicroOndas.Domain.Entities
         public char HeatingChar { get; private set; }
         public string? Instructions { get; private set; }
         public bool IsPredefined { get; private set; }
+        public bool IsActive { get; private set; }
 
         protected HeatingProgramDefinition() { }
 

@@ -10,9 +10,8 @@ namespace MicroOndas.Infrastructure.Repositories
     {
         private readonly string _connectionString;
 
-        // Lista explícita de colunas alinhada com a entidade C#
         private const string SelectColumns =
-            "Id, Name, Food, TimeInSeconds, Power, HeatingChar, Instructions, IsPredefined";
+            "Id, Name, Food, TimeInSeconds, Power, HeatingChar, Instructions, IsPredefined, IsActive";
 
         public SqlHeatingProgramRepository(string connectionString)
         {
@@ -23,16 +22,14 @@ namespace MicroOndas.Infrastructure.Repositories
         {
             using var connection = new SqlConnection(_connectionString);
             return connection.Query<HeatingProgramDefinition>(
-                // Filtra apenas programas predefinidos ativos
-                $"SELECT {SelectColumns} FROM HeatingPrograms WHERE IsPredefined = 1 AND IsActive = 1 ORDER BY Name");
+                $"SELECT {SelectColumns} FROM HeatingPrograms WHERE IsActive = 1 ORDER BY Name");
         }
 
         public HeatingProgramDefinition? GetByName(string name)
         {
             using var connection = new SqlConnection(_connectionString);
             return connection.QueryFirstOrDefault<HeatingProgramDefinition>(
-                // Busca um programa predefinido ativo pelo nome
-                $"SELECT {SelectColumns} FROM HeatingPrograms WHERE Name = @Name AND IsPredefined = 1 AND IsActive = 1",
+                $"SELECT {SelectColumns} FROM HeatingPrograms WHERE Name = @Name AND IsActive = 1",
                 new { Name = name });
         }
 
@@ -48,12 +45,11 @@ namespace MicroOndas.Infrastructure.Repositories
         {
             using var connection = new SqlConnection(_connectionString);
 
-            // CORREÇÃO: Removido 'Id' e '@Id'. Colunas 'IsActive' e 'CreatedAt' usam DEFAULT no DB.
-            connection.Execute(@"
+            connection.Execute(@$"
                 INSERT INTO HeatingPrograms
-                (Name, Food, TimeInSeconds, Power, HeatingChar, Instructions, IsPredefined)
+                (Name, Food, TimeInSeconds, Power, HeatingChar, Instructions, IsPredefined, IsActive)
                 VALUES
-                (@Name, @Food, @TimeInSeconds, @Power, @HeatingChar, @Instructions, @IsPredefined)",
+                (@Name, @Food, @TimeInSeconds, @Power, @HeatingChar, @Instructions, @IsPredefined, 1)",
                 program);
         }
     }

@@ -13,12 +13,8 @@ namespace MicroOndas.Web.Pages
     public class IndexModel : PageModel
     {
         private readonly MicroOndasService _microondasService;
+        // CORREÇÃO: Altera a dependência para o repositório unificado
         private readonly IHeatingProgramRepository _programRepository;
-        public IndexModel(MicroOndasService microondasService, IHeatingProgramRepository programRepository)
-        {
-            _microondasService = microondasService;
-            _programRepository = programRepository;
-        }
 
         public HeatingProgram CurrentHeatingStatus { get; set; } = new HeatingProgram(0, 10);
 
@@ -35,8 +31,21 @@ namespace MicroOndas.Web.Pages
 
         [BindProperty]
         public string SelectedProgramName { get; set; } = string.Empty;
+
+        // NOVO: BindProperty para o formulário de criação de programas
+        [BindProperty]
+        public ProgramCreationDto NewProgram { get; set; } = new ProgramCreationDto();
+
+        // CORREÇÃO: Altera o tipo de retorno para a entidade unificada
         public IEnumerable<HeatingProgramDefinition> PredefinedPrograms { get; set; }
             = Enumerable.Empty<HeatingProgramDefinition>();
+
+        // CORREÇÃO: Ajusta o construtor para receber a nova dependência
+        public IndexModel(MicroOndasService microondasService, IHeatingProgramRepository programRepository)
+        {
+            _microondasService = microondasService;
+            _programRepository = programRepository;
+        }
 
         public void OnGet()
         {
@@ -50,7 +59,7 @@ namespace MicroOndas.Web.Pages
             }
         }
 
-        // ===================== AÇÕES =====================
+        // ===================== AÇÕES DE INÍCIO =====================
 
         public IActionResult OnPostStartHeating()
         {
@@ -114,7 +123,31 @@ namespace MicroOndas.Web.Pages
             return RedirectToPage();
         }
 
-        // ===================== CONTROLES =====================
+        // ===================== AÇÃO DE CRIAÇÃO DE PROGRAMA (NOVO) =====================
+
+        public IActionResult OnPostAddProgram()
+        {
+            // Chamamos o novo método do serviço que valida e persiste
+            var (success, message) = _microondasService.AddNewProgram(NewProgram);
+
+            if (!success)
+            {
+                ErrorMessage = message;
+                // Recarrega o estado atual e a lista de programas para manter a UI consistente
+                OnGet();
+                return Page();
+            }
+
+            // Limpa o objeto DTO e define a mensagem de sucesso
+            NewProgram = new ProgramCreationDto();
+            Message = message;
+
+            // Redireciona para um novo GET para limpar o estado POST e recarregar a lista atualizada de programas
+            return RedirectToPage();
+        }
+
+        // ===================== CONTROLES DE AQUECIMENTO =====================
+
         public IActionResult OnPostPause()
         {
             _microondasService.PauseHeating();
