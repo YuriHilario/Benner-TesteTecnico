@@ -7,14 +7,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace MicroOndas.Web.Pages
 {
     public class IndexModel : PageModel
     {
         private readonly MicroOndasService _microondasService;
-        private readonly IPredefinedProgramRepository _programRepository;
+        // CORREÇÃO: Altera a dependência para o repositório unificado
+        private readonly IHeatingProgramRepository _programRepository;
 
         public HeatingProgram CurrentHeatingStatus { get; set; } = new HeatingProgram(0, 10);
 
@@ -32,12 +32,16 @@ namespace MicroOndas.Web.Pages
         [BindProperty]
         public string SelectedProgramName { get; set; } = string.Empty;
 
-        public IEnumerable<PredefinedProgram> PredefinedPrograms { get; set; }
-            = Enumerable.Empty<PredefinedProgram>();
+        // NOVO: BindProperty para o formulário de criação de programas
+        [BindProperty]
+        public ProgramCreationDto NewProgram { get; set; } = new ProgramCreationDto();
 
-        public IndexModel(
-            MicroOndasService microondasService,
-            IPredefinedProgramRepository programRepository)
+        // CORREÇÃO: Altera o tipo de retorno para a entidade unificada
+        public IEnumerable<HeatingProgramDefinition> PredefinedPrograms { get; set; }
+            = Enumerable.Empty<HeatingProgramDefinition>();
+
+        // CORREÇÃO: Ajusta o construtor para receber a nova dependência
+        public IndexModel(MicroOndasService microondasService, IHeatingProgramRepository programRepository)
         {
             _microondasService = microondasService;
             _programRepository = programRepository;
@@ -45,20 +49,44 @@ namespace MicroOndas.Web.Pages
 
         public void OnGet()
         {
-            PredefinedPrograms = _programRepository.GetAllPrograms();
             CurrentHeatingStatus = _microondasService.GetCurrentStatus();
+            // CORREÇÃO: Chama o método do repositório unificado
+            PredefinedPrograms = _programRepository.GetAll().OrderBy(p => p.Name);
+
+            if (CurrentHeatingStatus.Status == HeatingStatus.Completed)
+            {
+                Message = "Aquecimento concluído!";
+            }
         }
 
-        // ===================== PROGRAMAS PRÉ-DEFINIDOS =====================
-        public IActionResult OnPostStartPredefinedHeating()
+        // ===================== AÇÕES DE INÍCIO =====================
+
+        public IActionResult OnPostStartHeating()
         {
-            if (string.IsNullOrEmpty(SelectedProgramName))
+            var dto = new ProgramInputDto
             {
-                ErrorMessage = "Selecione um programa pré-definido.";
+                TimeInSeconds = InputTime,
+                Power = InputPower
+            };
+
+            var (success, message, conversion) = _microondasService.StartHeating(dto);
+
+            if (!success)
+            {
+                ErrorMessage = message;
                 OnGet();
                 return Page();
             }
 
+            Message = message;
+            TimeConversionMessage = conversion;
+            InstructionsMessage = string.Empty;
+
+            return RedirectToPage();
+        }
+
+        public IActionResult OnPostStartPredefinedHeating()
+        {
             var (success, message, instructions) =
                 _microondasService.StartPredefinedHeating(SelectedProgramName);
 
@@ -72,32 +100,6 @@ namespace MicroOndas.Web.Pages
             Message = message;
             InstructionsMessage = instructions;
             TimeConversionMessage = string.Empty;
-
-            return RedirectToPage();
-        }
-
-        // ===================== AQUECIMENTO MANUAL =====================
-        public IActionResult OnPostStartHeating()
-        {
-            var input = new ProgramInputDto
-            {
-                TimeInSeconds = InputTime,
-                Power = InputPower
-            };
-
-            var (success, message, conversion) =
-                _microondasService.StartHeating(input);
-
-            if (!success)
-            {
-                ErrorMessage = message;
-                OnGet();
-                return Page();
-            }
-
-            Message = message;
-            TimeConversionMessage = conversion;
-            InstructionsMessage = string.Empty;
 
             return RedirectToPage();
         }
@@ -121,7 +123,31 @@ namespace MicroOndas.Web.Pages
             return RedirectToPage();
         }
 
-        // ===================== CONTROLES =====================
+        // ===================== AÇÃO DE CRIAÇÃO DE PROGRAMA (NOVO) =====================
+
+        public IActionResult OnPostAddProgram()
+        {
+            // Chamamos o novo método do serviço que valida e persiste
+            var (success, message) = _microondasService.AddNewProgram(NewProgram);
+
+            if (!success)
+            {
+                ErrorMessage = message;
+                // Recarrega o estado atual e a lista de programas para manter a UI consistente
+                OnGet();
+                return Page();
+            }
+
+            // Limpa o objeto DTO e define a mensagem de sucesso
+            NewProgram = new ProgramCreationDto();
+            Message = message;
+
+            // Redireciona para um novo GET para limpar o estado POST e recarregar a lista atualizada de programas
+            return RedirectToPage();
+        }
+
+        // ===================== CONTROLES DE AQUECIMENTO =====================
+
         public IActionResult OnPostPause()
         {
             _microondasService.PauseHeating();

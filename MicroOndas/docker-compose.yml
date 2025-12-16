@@ -1,0 +1,39 @@
+services:
+
+  microondas-sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: microondas-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "NovaSenha123!"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    networks:
+      - microondas-net
+
+  
+  microondas-web:
+    build:
+      context: .
+      dockerfile: MicroOndas.Web/Dockerfile
+    container_name: microondas-web
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: >
+        Server=microondas-sql,1433;
+        Database=MicroOndasDB;
+        User Id=sa;
+        Password=NovaSenha123!;
+        TrustServerCertificate=True
+    networks:
+      - microondas-net
+
+volumes:
+  sql_data:
+
+networks:
+  microondas-net:
