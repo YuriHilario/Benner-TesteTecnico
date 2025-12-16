@@ -7,14 +7,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace MicroOndas.Web.Pages
 {
     public class IndexModel : PageModel
     {
         private readonly MicroOndasService _microondasService;
-        private readonly IPredefinedProgramRepository _programRepository;
+        private readonly IHeatingProgramRepository _programRepository;
+        public IndexModel(MicroOndasService microondasService, IHeatingProgramRepository programRepository)
+        {
+            _microondasService = microondasService;
+            _programRepository = programRepository;
+        }
 
         public HeatingProgram CurrentHeatingStatus { get; set; } = new HeatingProgram(0, 10);
 
@@ -31,34 +35,49 @@ namespace MicroOndas.Web.Pages
 
         [BindProperty]
         public string SelectedProgramName { get; set; } = string.Empty;
-
-        public IEnumerable<PredefinedProgram> PredefinedPrograms { get; set; }
-            = Enumerable.Empty<PredefinedProgram>();
-
-        public IndexModel(
-            MicroOndasService microondasService,
-            IPredefinedProgramRepository programRepository)
-        {
-            _microondasService = microondasService;
-            _programRepository = programRepository;
-        }
+        public IEnumerable<HeatingProgramDefinition> PredefinedPrograms { get; set; }
+            = Enumerable.Empty<HeatingProgramDefinition>();
 
         public void OnGet()
         {
-            PredefinedPrograms = _programRepository.GetAllPrograms();
             CurrentHeatingStatus = _microondasService.GetCurrentStatus();
+            // CORREÇÃO: Chama o método do repositório unificado
+            PredefinedPrograms = _programRepository.GetAll().OrderBy(p => p.Name);
+
+            if (CurrentHeatingStatus.Status == HeatingStatus.Completed)
+            {
+                Message = "Aquecimento concluído!";
+            }
         }
 
-        // ===================== PROGRAMAS PRÉ-DEFINIDOS =====================
-        public IActionResult OnPostStartPredefinedHeating()
+        // ===================== AÇÕES =====================
+
+        public IActionResult OnPostStartHeating()
         {
-            if (string.IsNullOrEmpty(SelectedProgramName))
+            var dto = new ProgramInputDto
             {
-                ErrorMessage = "Selecione um programa pré-definido.";
+                TimeInSeconds = InputTime,
+                Power = InputPower
+            };
+
+            var (success, message, conversion) = _microondasService.StartHeating(dto);
+
+            if (!success)
+            {
+                ErrorMessage = message;
                 OnGet();
                 return Page();
             }
 
+            Message = message;
+            TimeConversionMessage = conversion;
+            InstructionsMessage = string.Empty;
+
+            return RedirectToPage();
+        }
+
+        public IActionResult OnPostStartPredefinedHeating()
+        {
             var (success, message, instructions) =
                 _microondasService.StartPredefinedHeating(SelectedProgramName);
 
@@ -72,32 +91,6 @@ namespace MicroOndas.Web.Pages
             Message = message;
             InstructionsMessage = instructions;
             TimeConversionMessage = string.Empty;
-
-            return RedirectToPage();
-        }
-
-        // ===================== AQUECIMENTO MANUAL =====================
-        public IActionResult OnPostStartHeating()
-        {
-            var input = new ProgramInputDto
-            {
-                TimeInSeconds = InputTime,
-                Power = InputPower
-            };
-
-            var (success, message, conversion) =
-                _microondasService.StartHeating(input);
-
-            if (!success)
-            {
-                ErrorMessage = message;
-                OnGet();
-                return Page();
-            }
-
-            Message = message;
-            TimeConversionMessage = conversion;
-            InstructionsMessage = string.Empty;
 
             return RedirectToPage();
         }

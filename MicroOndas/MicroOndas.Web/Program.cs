@@ -1,38 +1,67 @@
 using MicroOndas.Application.Services;
 using MicroOndas.Domain.Interfaces;
+using MicroOndas.Infrastructure.Repositories;
 using MicroOndas.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// =======================================================
+// SERVICES
+// =======================================================
+
+// Razor Pages
 builder.Services.AddRazorPages();
 
-// --- ADIÇÕES OBRIGATÓRIAS PARA O NÍVEL 1 ---
+// -------------------------------------------------------
+// CORE DO MICRO-ONDAS
+// -------------------------------------------------------
 
-// 1. Injeção do Serviço de Aplicação (MicroOndasService)
-// Registrado como Singleton para garantir que haja APENAS UMA instância
-// gerenciando o estado do Micro-ondas (CurrentProgram) na memória.
+// Serviço principal do micro-ondas
+// Singleton porque mantém estado em memória
 builder.Services.AddSingleton<MicroOndasService>();
 
-// 2. Injeção do Background Service (Timer)
-// Responsável por executar o timer a cada segundo e chamar ProcessOneSecond().
+// Timer (BackgroundService)
+// Executa o processamento a cada 1 segundo
 builder.Services.AddHostedService<MicroOndasTimerService>();
 
-builder.Services.AddSingleton<IPredefinedProgramRepository, PredefinedProgramRepository>();
-
-// 3. Injeção do SignalR
-// Necessário para permitir a comunicação em tempo real (push) para o navegador.
+// SignalR (atualização em tempo real da UI)
 builder.Services.AddSignalR();
 
-// ---------------------------------------------
+// -------------------------------------------------------
+// REPOSITÓRIOS — SQL SERVER (NÍVEL 3)
+// -------------------------------------------------------
+
+// Programas de aquecimento dinâmicos
+builder.Services.AddScoped<IHeatingProgramRepository>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+    return new SqlHeatingProgramRepository(connectionString!);
+});
+
+// Programas pré-definidos (memória / banco)
+builder.Services.AddScoped<IPredefinedProgramRepository>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+    return new SqlPredefinedProgramRepository(connectionString!);
+});
+
+// =======================================================
+// BUILD
+// =======================================================
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// =======================================================
+// MIDDLEWARE
+// =======================================================
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -40,17 +69,15 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
-
 app.UseAuthorization();
+
+// =======================================================
+// ENDPOINTS
+// =======================================================
 
 app.MapRazorPages();
 
-// --- Mapeamento do SignalR ---
-
-// 4. Mapeamento do Hub SignalR
-// Cria um endpoint ('/microondashub') que o JavaScript do cliente irá se conectar.
+// Hub SignalR
 app.MapHub<MicroOndasHub>("/microondashub");
-
-// ------------------------------
 
 app.Run();

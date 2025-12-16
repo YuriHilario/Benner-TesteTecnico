@@ -131,7 +131,7 @@
                     @foreach (var program in Model.PredefinedPrograms)
                     {
                         <option value="@program.Name">
-                            @program.Name (@program.Alimento) – P@program.Power – @(program.TimeInSeconds / 60)m
+                            @program.Name (@program.Food) – P@program.Power – @(program.TimeInSeconds / 60)m
                         </option>
                     }
                 </select>

@@ -3,22 +3,26 @@ using MicroOndas.Application.Validation;
 using MicroOndas.Domain.Entities;
 using MicroOndas.Domain.Enums;
 using MicroOndas.Domain.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MicroOndas.Application.Services
 {
     public class MicroOndasService
     {
         private readonly object _lock = new();
-        private readonly IPredefinedProgramRepository _predefinedRepo;
+        private readonly IServiceScopeFactory _scopeFactory;
 
         private HeatingProgram _currentProgram;
 
-        public MicroOndasService(IPredefinedProgramRepository predefinedRepo)
+        public MicroOndasService(IServiceScopeFactory scopeFactory)
         {
-            _predefinedRepo = predefinedRepo;
+            _scopeFactory = scopeFactory;
             _currentProgram = new HeatingProgram(0, 10);
         }
 
+        // =======================
+        // STATUS ATUAL
+        // =======================
         public HeatingProgram GetCurrentStatus()
         {
             lock (_lock)
@@ -28,7 +32,7 @@ namespace MicroOndas.Application.Services
         }
 
         // =======================
-        // NÍVEL 2 — PRÉ-DEFINIDOS
+        // PROGRAMAS PRÉ-DEFINIDOS (DB)
         // =======================
         public (bool Success, string Message, string Instructions)
             StartPredefinedHeating(string programName)
@@ -38,7 +42,14 @@ namespace MicroOndas.Application.Services
                 if (_currentProgram.Status == HeatingStatus.InProgress)
                     return (false, "Aquecimento já está em andamento.", string.Empty);
 
-                var program = _predefinedRepo.GetProgramByName(programName);
+                using var scope = _scopeFactory.CreateScope();
+                var repository = scope.ServiceProvider
+                    .GetRequiredService<IHeatingProgramRepository>();
+
+                var program = repository.GetByName(programName);
+
+                if (program is null)
+                    return (false, "Programa não encontrado.", string.Empty);
 
                 _currentProgram = new HeatingProgram(
                     program.TimeInSeconds,
@@ -58,7 +69,7 @@ namespace MicroOndas.Application.Services
         }
 
         // =======================
-        // NÍVEL 1 — MANUAL / QUICK
+        // MANUAL / QUICK START
         // =======================
         public (bool Success, string Message, string TimeConversionMessage)
             StartHeating(ProgramInputDto input, bool isQuickStart = false)
@@ -105,7 +116,16 @@ namespace MicroOndas.Application.Services
         {
             lock (_lock)
             {
+                if (_currentProgram.Status != HeatingStatus.InProgress)
+                    return _currentProgram;
+
                 _currentProgram.DecrementTime();
+
+                if (_currentProgram.Status == HeatingStatus.Completed)
+                {
+                    _currentProgram = new HeatingProgram(0, 10);
+                }
+
                 return _currentProgram;
             }
         }
@@ -126,6 +146,7 @@ namespace MicroOndas.Application.Services
             lock (_lock)
             {
                 _currentProgram.Cancel();
+                _currentProgram = new HeatingProgram(0, 10);
             }
         }
     }
