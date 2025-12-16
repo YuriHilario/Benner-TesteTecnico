@@ -2,14 +2,14 @@
 
 Este projeto simula um Micro-Ondas Digital interativo, desenvolvido em ASP.NET Core e Razor Pages, utilizando SignalR para atualizações em tempo real do timer e Dapper para persistência de programas pré-definidos no SQL Server.
 
-##Recursos Principais
+**Recursos Principais**
 Aquecimento Personalizado: Definição manual de tempo e potência.
 Programas Pré-Definidos: Carregamento de programas do SQL Server.
 Controles: Iniciar, Pausar, Continuar e Cancelar o aquecimento.
 Tempo Real: Atualização imediata do display via SignalR (MicroOndasTimerService).
 Persistência: Uso do Dapper no SqlHeatingProgramRepository para acesso ao banco de dados.
 
-##Requisitos de Desenvolvimento
+**Requisitos de Desenvolvimento**
 Para executar e desenvolver o projeto localmente, você precisará ter instalado:
 .NET 8 SDK ou superior
 Docker Desktop (Necessário para executar o container do SQL Server)
@@ -17,14 +17,14 @@ SQL Server Management Studio (SSMS) ou Azure Data Studio (Opcional, mas altament
 
 >  This is a challenge by [Coodesh](https://coodesh.com/)
 
-##Inicialização do Projeto
+**Inicialização do Projeto**
 Configurar o Banco de Dados (SQL Server via Docker)
 O projeto está configurado para usar um container Docker como servidor SQL.
 
-###A. Iniciar o Container:
+**A. Iniciar o Container**:
 Navegue até a pasta que contém o docker-compose.yml e utilize o comando para subir o container SQL Server:
 
-###B. Criar o Schema e Seed (Manual)
+**B. Criar o Schema e Seed (Manual)**
 Conecte-se ao servidor SQL (localhost,1433 ou sqlserver) usando o login a senha (conforme definido no appsettings.json e no comando Docker).
 
 Execute os scripts a seguir para criar a tabela e inserir os programas pré-definidos:
